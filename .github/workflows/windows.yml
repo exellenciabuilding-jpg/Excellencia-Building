@@ -25,7 +25,7 @@ jobs:
           cat > desktop/package.json <<'EOF'
           {
             "name": "excellencia-building-desktop",
-            "version": "1.0.0",
+            "version": "1.0.1",
             "private": true,
             "description": "Excellencia Building - logiciel Windows",
             "author": "Excellencia Building",
@@ -38,7 +38,7 @@ jobs:
               "appId": "com.excellencia.building.desktop",
               "productName": "Excellencia Building",
               "directories": { "output": "dist", "buildResources": "build" },
-              "files": ["main.js", "icon.png", "www/**/*"],
+              "files": ["main.js", "preload.js", "icon.png", "www/**/*"],
               "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png" },
               "nsis": {
                 "oneClick": false,
@@ -52,8 +52,20 @@ jobs:
             }
           }
           EOF
+          cat > desktop/preload.js <<'EOF'
+          const { ipcRenderer } = require('electron');
+          window.prompt = function (message, def) {
+            return ipcRenderer.sendSync('exb-prompt', {
+              message: message == null ? '' : String(message),
+              value: def == null ? '' : String(def)
+            });
+          };
+          if (location.protocol === 'data:') {
+            window.__exbPromptDone = function (v) { ipcRenderer.send('exb-prompt-done', v); };
+          }
+          EOF
           cat > desktop/main.js <<'EOF'
-          const { app, BrowserWindow, protocol, shell, session, Menu } = require('electron');
+          const { app, BrowserWindow, protocol, shell, session, Menu, ipcMain } = require('electron');
           const path = require('path');
           const fs = require('fs');
 
@@ -88,7 +100,7 @@ jobs:
               backgroundColor: '#0b2a5b', autoHideMenuBar: true, show: false,
               title: 'Excellencia Building',
               icon: path.join(__dirname, 'icon.png'),
-              webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
+              webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: false, nodeIntegration: false, sandbox: true, spellcheck: false }
             });
             win.once('ready-to-show', function () { win.maximize(); win.show(); });
             win.loadURL('app://excellencia/index.html');
@@ -107,6 +119,47 @@ jobs:
               if (isExternal(u)) shell.openExternal(u);
             });
           }
+
+          /* Electron ne gere pas prompt() : on le remplace par une petite fenetre de saisie */
+          function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+          function promptHtml(d) {
+            return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Excellencia Building</title><style>' +
+              'body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#f4f6fb;color:#0b2a5b;padding:18px}' +
+              '.m{white-space:pre-wrap;font-size:14px;line-height:1.4;max-height:96px;overflow:auto;margin-bottom:12px}' +
+              'input{width:100%;box-sizing:border-box;padding:9px;font-size:14px;border:1px solid #9aa9c6;border-radius:6px}' +
+              '.b{margin-top:14px;text-align:right}button{padding:8px 18px;font-size:14px;border-radius:6px;border:1px solid #0b2a5b;margin-left:8px;cursor:pointer}' +
+              '#ok{background:#0b2a5b;color:#fff}#no{background:#fff;color:#0b2a5b}</style></head><body>' +
+              '<div class="m">' + esc(d.message) + '</div><input id="v" value="' + esc(d.value) + '" autofocus>' +
+              '<div class="b"><button id="no">Annuler</button><button id="ok">OK</button></div><script>' +
+              'var v=document.getElementById("v");v.focus();v.select();' +
+              'document.getElementById("ok").onclick=function(){window.__exbPromptDone(v.value)};' +
+              'document.getElementById("no").onclick=function(){window.__exbPromptDone(null)};' +
+              'document.addEventListener("keydown",function(e){if(e.key==="Enter")window.__exbPromptDone(v.value);if(e.key==="Escape")window.__exbPromptDone(null)});' +
+              '</script></body></html>';
+          }
+          ipcMain.on('exb-prompt', function (event, d) {
+            var parent = BrowserWindow.fromWebContents(event.sender) || win;
+            var finished = false;
+            var dlg = new BrowserWindow({
+              parent: parent, modal: true, width: 480, height: 250, resizable: false,
+              minimizable: false, maximizable: false, autoHideMenuBar: true, show: false,
+              title: 'Excellencia Building',
+              webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: false, nodeIntegration: false, sandbox: true }
+            });
+            dlg.setMenu(null);
+            function onDone(e, v) { if (e.sender === dlg.webContents) finish(v); }
+            function finish(v) {
+              if (finished) return;
+              finished = true;
+              ipcMain.removeListener('exb-prompt-done', onDone);
+              event.returnValue = (v === undefined ? null : v);
+              if (!dlg.isDestroyed()) dlg.destroy();
+            }
+            ipcMain.on('exb-prompt-done', onDone);
+            dlg.on('closed', function () { finish(null); });
+            dlg.once('ready-to-show', function () { dlg.show(); });
+            dlg.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(promptHtml({ message: d && d.message || '', value: d && d.value || '' })));
+          });
 
           app.on('second-instance', function () {
             if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
