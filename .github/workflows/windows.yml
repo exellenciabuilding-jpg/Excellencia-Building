@@ -1,0 +1,162 @@
+name: Construire le logiciel Windows
+on:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extraire le ZIP du projet
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force projet | Out-Null
+          Get-ChildItem -Filter *.zip | Where-Object { $_.Name -ne 'cle-de-signature.zip' } | ForEach-Object { Expand-Archive -LiteralPath $_.FullName -DestinationPath projet -Force }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Préparer les fichiers du logiciel
+        shell: bash
+        working-directory: projet
+        run: |
+          node scripts/build-www.js
+          mkdir -p desktop/build
+          cp -r www desktop/www
+          cp site/icon-512.png desktop/build/icon.png
+          cp site/icon-512.png desktop/icon.png
+          cat > desktop/package.json <<'EOF'
+          {
+            "name": "excellencia-building-desktop",
+            "version": "1.0.0",
+            "private": true,
+            "description": "Excellencia Building - logiciel Windows",
+            "author": "Excellencia Building",
+            "main": "main.js",
+            "devDependencies": {
+              "electron": "^33.2.0",
+              "electron-builder": "^25.1.8"
+            },
+            "build": {
+              "appId": "com.excellencia.building.desktop",
+              "productName": "Excellencia Building",
+              "directories": { "output": "dist", "buildResources": "build" },
+              "files": ["main.js", "icon.png", "www/**/*"],
+              "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png" },
+              "nsis": {
+                "oneClick": false,
+                "perMachine": false,
+                "allowToChangeInstallationDirectory": true,
+                "createDesktopShortcut": true,
+                "createStartMenuShortcut": true,
+                "shortcutName": "Excellencia Building",
+                "artifactName": "Excellencia-Building-Setup-${version}.${ext}"
+              }
+            }
+          }
+          EOF
+          cat > desktop/main.js <<'EOF'
+          const { app, BrowserWindow, protocol, shell, session, Menu } = require('electron');
+          const path = require('path');
+          const fs = require('fs');
+
+          const ROOT = path.join(__dirname, 'www');
+          const MIME = {
+            '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+            '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+            '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+            '.webmanifest': 'application/manifest+json', '.map': 'application/json',
+            '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+            '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+            '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
+            '.pdf': 'application/pdf', '.wasm': 'application/wasm', '.txt': 'text/plain; charset=utf-8',
+            '.csv': 'text/csv; charset=utf-8', '.xml': 'application/xml', '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav', '.mp4': 'video/mp4', '.sql': 'text/plain; charset=utf-8'
+          };
+
+          /* adresse interne stable : les donnees (IndexedDB, stockage local) restent toujours au meme endroit */
+          protocol.registerSchemesAsPrivileged([
+            { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+          ]);
+
+          if (!app.requestSingleInstanceLock()) { app.quit(); }
+
+          let win = null;
+
+          function isExternal(u) { return /^(https?:|mailto:|tel:|whatsapp:|sms:)/i.test(u); }
+
+          function createWindow() {
+            win = new BrowserWindow({
+              width: 1366, height: 850, minWidth: 1000, minHeight: 640,
+              backgroundColor: '#0b2a5b', autoHideMenuBar: true, show: false,
+              title: 'Excellencia Building',
+              icon: path.join(__dirname, 'icon.png'),
+              webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false }
+            });
+            win.once('ready-to-show', function () { win.maximize(); win.show(); });
+            win.loadURL('app://excellencia/index.html');
+
+            win.webContents.setWindowOpenHandler(function (d) {
+              var u = d.url || '';
+              if (isExternal(u)) { shell.openExternal(u); return { action: 'deny' }; }
+              if (u === '' || u.indexOf('about:') === 0 || u.indexOf('blob:') === 0 || u.indexOf('app://') === 0) {
+                return { action: 'allow', overrideBrowserWindowOptions: { autoHideMenuBar: true, width: 1100, height: 800 } };
+              }
+              return { action: 'deny' };
+            });
+            win.webContents.on('will-navigate', function (e, u) {
+              if (u.indexOf('app://') === 0) return;
+              e.preventDefault();
+              if (isExternal(u)) shell.openExternal(u);
+            });
+          }
+
+          app.on('second-instance', function () {
+            if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+          });
+
+          app.whenReady().then(function () {
+            protocol.handle('app', async function (req) {
+              try {
+                var p = decodeURIComponent(new URL(req.url).pathname);
+                if (p === '/' || p === '') p = '/index.html';
+                var f = path.normalize(path.join(ROOT, p));
+                if (f.indexOf(ROOT) !== 0) return new Response('Interdit', { status: 403 });
+                var data = await fs.promises.readFile(f);
+                var type = MIME[path.extname(f).toLowerCase()] || 'application/octet-stream';
+                return new Response(data, { headers: { 'Content-Type': type, 'Cache-Control': 'no-cache' } });
+              } catch (e) {
+                return new Response('Introuvable', { status: 404 });
+              }
+            });
+
+            var okPerms = ['media', 'notifications', 'clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'geolocation', 'midi'];
+            session.defaultSession.setPermissionRequestHandler(function (wc, perm, cb) {
+              cb(okPerms.indexOf(perm) >= 0 && String(wc.getURL()).indexOf('app://') === 0);
+            });
+            session.defaultSession.setPermissionCheckHandler(function (wc, perm) {
+              return okPerms.indexOf(perm) >= 0;
+            });
+
+            Menu.setApplicationMenu(Menu.buildFromTemplate([
+              { role: 'editMenu' },
+              { label: 'Affichage', submenu: [
+                { role: 'reload', label: 'Actualiser' }, { type: 'separator' },
+                { role: 'resetZoom', label: 'Zoom normal' }, { role: 'zoomIn', label: 'Zoom +' }, { role: 'zoomOut', label: 'Zoom -' },
+                { type: 'separator' }, { role: 'togglefullscreen', label: 'Plein ecran' }
+              ] }
+            ]));
+            createWindow();
+          });
+
+          app.on('window-all-closed', function () { app.quit(); });
+          EOF
+      - name: Installer Electron
+        working-directory: projet/desktop
+        run: npm install
+      - name: Construire l'installateur .exe
+        working-directory: projet/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excellencia-building-windows-setup
+          path: projet/desktop/dist/*.exe
