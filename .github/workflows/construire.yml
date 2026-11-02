@@ -11,11 +11,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dezipper
         working-directory: .
-        run: |
-          mkdir build
-          unzip -oq Excellencia-V120p*.zip -d build
-          mkdir -p build/clients/proprio
-          echo '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}' > build/clients/proprio/entreprise.json
+        run: unzip -oq Excellencia-V120p*.zip -d build
+      - name: Marque
+        working-directory: .
+        env:
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
+        run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - uses: actions/setup-java@v4
@@ -38,14 +39,43 @@ jobs:
   exe:
     runs-on: windows-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Dezipper
-        run: |
-          New-Item -ItemType Directory -Force build | Out-Null
-          $z = (Get-ChildItem Excellencia-V120p*.zip).FullName
-          Expand-Archive -Path $z -DestinationPath build -Force
-          New-Item -ItemType Directory -Force build/clients/proprio | Out-Null
-          '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}' | Set-Content build/clients/proprio/entreprise.json
+        run: 7z x Excellencia-V120p*.zip -obuild -y
+      - name: Marque
+        env:
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
+        run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
       - uses: actions/setup-node@v4
-        with: { node-version
+        with: { node-version: 20 }
+      - run: npm install && npm install --no-save --no-audit sharp
+        working-directory: build
+      - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+        working-directory: build
+      - name: Corriger les noms de fichiers
+        working-directory: build/electron
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.build.artifactName;p.build.nsis.artifactName='Excellencia-Building-Installateur-\${version}.\${ext}';p.build.portable={artifactName:'Excellencia-Building-Portable-\${version}.\${ext}'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+      - name: Installer
+        working-directory: build/electron
+        env:
+          EXB_OWNER: '1'
+        run: npm install
+      - name: Preparer
+        working-directory: build/electron
+        env:
+          EXB_OWNER: '1'
+        run: node scripts/prepare.js
+      - name: Compiler l'EXE
+        working-directory: build/electron
+        env:
+          EXB_OWNER: '1'
+        run: npx electron-builder --win nsis portable --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EXE-proprietaire
+          path: build/electron/dist/*.exe
+          retention-days: 30
