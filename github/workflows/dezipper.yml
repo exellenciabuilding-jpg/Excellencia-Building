@@ -1,0 +1,19 @@
+name: Dézipper la V120p
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          unzip -oq Excellencia-V120p*.zip -x ".github/*"
+          mkdir -p a-deplacer
+          unzip -oj Excellencia-V120p*.zip ".github/workflows/apk-proprietaire.yml" -d a-deplacer
+          rm -f Excellencia-V120p*.zip
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Extraction V120p"
+          git push
