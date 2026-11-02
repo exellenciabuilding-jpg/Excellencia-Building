@@ -1,0 +1,68 @@
+name: Construire APK et EXE proprietaire
+on: workflow_dispatch
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dezipper
+        working-directory: .
+        run: |
+          mkdir build
+          unzip -oq Excellencia-V120p*.zip -d build
+          mkdir -p build/clients/proprio
+          echo '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}' > build/clients/proprio/entreprise.json
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm install && npm install --no-save --no-audit sharp
+      - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+      - run: npm run android:add
+      - run: npm run android:sync
+        env:
+          EXB_OWNER: '1'
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: build/android
+      - run: cp build/android/app/build/outputs/apk/debug/app-debug.apk Excellencia-PROPRIETAIRE.apk
+        working-directory: .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK-proprietaire
+          path: Excellencia-PROPRIETAIRE.apk
+          retention-days: 30
+  exe:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dezipper
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          $z = (Get-ChildItem Excellencia-V120p*.zip).FullName
+          Expand-Archive -Path $z -DestinationPath build -Force
+          New-Item -ItemType Directory -Force build/clients/proprio | Out-Null
+          '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}' | Set-Content build/clients/proprio/entreprise.json
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install; npm install --no-save --no-audit sharp
+        working-directory: build
+      - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+        working-directory: build
+      - name: Compiler l'EXE
+        working-directory: build/electron
+        env:
+          EXB_OWNER: '1'
+        run: |
+          npm install
+          node scripts/prepare.js
+          npx electron-builder --win nsis portable --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EXE-proprietaire
+          path: build/electron/dist/*.exe
+          retention-days: 30
