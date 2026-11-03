@@ -1,7 +1,19 @@
 name: Construire APK et EXE proprietaire
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      cible:
+        description: Que construire ?
+        type: choice
+        default: APK
+        options:
+          - APK
+          - EXE-portable
+          - EXE-installateur
+          - EXE-installateur-publier
 jobs:
   apk:
+    if: ${{ inputs.cible == 'APK' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -11,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dezipper
         working-directory: .
-        run: unzip -oq Excellencia-V120p*.zip -d build
+        run: unzip -oq Excellencia-V120*.zip -d build
       - name: Marque
         working-directory: .
         env:
@@ -37,15 +49,21 @@ jobs:
           path: Excellencia-PROPRIETAIRE.apk
           retention-days: 30
   exe:
+    if: ${{ startsWith(inputs.cible, 'EXE') }}
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: write
     defaults:
       run:
         shell: bash
+    env:
+      CIBLE_EXE: ${{ inputs.cible == 'EXE-portable' && 'portable' || 'nsis' }}
+      PUBLIER: ${{ inputs.cible == 'EXE-installateur-publier' && 'always' || 'never' }}
     steps:
       - uses: actions/checkout@v4
       - name: Dezipper
-        run: 7z x Excellencia-V120p*.zip -obuild -y
+        run: 7z x Excellencia-V120*.zip -obuild -y
       - name: Marque
         env:
           BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
@@ -59,6 +77,13 @@ jobs:
       - name: Corriger les noms de fichiers
         working-directory: build/electron
         run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.build.artifactName;p.build.nsis.artifactName='Excellencia-Building-Installateur-\${version}.\${ext}';p.build.portable={artifactName:'Excellencia-Building-Portable-\${version}.\${ext}'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+      - name: Version et publication
+        if: ${{ inputs.cible == 'EXE-installateur-publier' }}
+        working-directory: build/electron
+        env:
+          DEPOT: ${{ github.repository }}
+          NUMERO: ${{ github.run_number }}
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));const r=process.env.DEPOT.split('/');p.version='1.0.'+process.env.NUMERO;p.build.publish={provider:'github',owner:r[0],repo:r[1],releaseType:'release'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
       - name: Installer
         working-directory: build/electron
         env:
@@ -73,7 +98,8 @@ jobs:
         working-directory: build/electron
         env:
           EXB_OWNER: '1'
-        run: npx electron-builder --win nsis portable --x64
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER
       - uses: actions/upload-artifact@v4
         with:
           name: EXE-proprietaire
