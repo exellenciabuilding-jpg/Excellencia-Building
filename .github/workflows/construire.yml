@@ -88,24 +88,40 @@ jobs:
         working-directory: build/electron
         env:
           EXB_OWNER: '1'
-        run: | set -o pipefail mkdir -p ../../logs for i in 1 2 3; do echo "=== npm install, essai $i ===" | tee -a ../../logs/1-installer.txt npm install --no-audit --no-fund 2>&1 | tee -a ../../logs/1-installer.txt && exit 0 sleep 15 done exit 1       - name: Preparer
+        run: npm install
+      - name: Preparer
         working-directory: build/electron
         env:
           EXB_OWNER: '1'
-        run: | set -o pipefail node scripts/prepare.js 2>&1 | tee ../../logs/2-preparer.txt       - name: Compiler l'EXE
+        run: node scripts/prepare.js
+      - name: Compiler l'EXE
         working-directory: build/electron
         env:
           EXB_OWNER: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: | set -o pipefail npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../logs/3-compiler.txt       - name: Resume de l'erreur (lisible sur telephone)
+        run: |
+          set -o pipefail
+          npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
+      - name: Resume de l'erreur (lisible sur telephone)
         if: ${{ failure() }}
-        run: | { echo "## Resume de l'erreur de l'EXE" if ls logs/*.txt >/dev/null 2>&1; then for f in logs/*.txt; do echo "### $(basename "$f") : lignes d'erreur" echo '```' grep -n -i -E "error|failed|cannot|invalid|unknown|not found|ERR!" "$f" | head -25 || true echo '```' echo "### $(basename "$f") : 25 dernieres lignes" echo '```' tail -n 25 "$f" || true echo '```' done else echo "Aucun journal n'a ete cree." fi } >> "$GITHUB_STEP_SUMMARY"       - uses: actions/upload-artifact@v4
+        run: |
+          {
+            echo "## Erreur de compilation de l'EXE"
+            echo "### Lignes qui parlent d'erreur"
+            echo '```'
+            grep -n -i -E "error|failed|cannot|invalid|unknown|not found|warning:" compile-log.txt | head -40 || true
+            echo '```'
+            echo "### 40 dernieres lignes avant la fin"
+            echo '```'
+            tail -n 40 compile-log.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
-          name: journaux-exe
-          path: logs
+          name: journal-compilation-exe
+          path: compile-log.txt
           retention-days: 7
-          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: EXE-proprietaire
