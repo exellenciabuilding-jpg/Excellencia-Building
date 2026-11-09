@@ -99,7 +99,29 @@ jobs:
         env:
           EXB_OWNER: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER
+        run: |
+          set -o pipefail
+          npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
+      - name: Resume de l'erreur (lisible sur telephone)
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "## Erreur de compilation de l'EXE"
+            echo "### Lignes qui parlent d'erreur"
+            echo '```'
+            grep -n -i -E "error|failed|cannot|invalid|unknown|not found|warning:" compile-log.txt | head -40 || true
+            echo '```'
+            echo "### 40 dernieres lignes avant la fin"
+            echo '```'
+            tail -n 40 compile-log.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: journal-compilation-exe
+          path: compile-log.txt
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: EXE-proprietaire
