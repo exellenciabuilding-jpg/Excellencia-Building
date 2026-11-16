@@ -36,6 +36,14 @@ jobs:
             echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
             exit 1
           fi
+          if [ ! -f build/package.json ]; then
+            P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
+            echo "Dossier du logiciel trouve : $P"
+            if [ -n "$P" ]; then cp -a "$P"/. build/; fi
+          fi
+          echo "Contenu de build :"
+          ls build
+          test -f build/package.json
       - name: Marque
         working-directory: .
         env:
@@ -88,6 +96,14 @@ jobs:
             echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
             exit 1
           fi
+          if [ ! -f build/package.json ]; then
+            P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
+            echo "Dossier du logiciel trouve : $P"
+            if [ -n "$P" ]; then cp -a "$P"/. build/; fi
+          fi
+          echo "Contenu de build :"
+          ls build
+          test -f build/package.json
       - name: Marque
         env:
           BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
@@ -127,7 +143,7 @@ jobs:
           set -o pipefail
           npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
       - name: Resume de l'erreur (lisible sur telephone)
-        if: ${{ failure() }}
+        if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
         run: |
           {
             echo "## Erreur de compilation de l'EXE"
@@ -141,7 +157,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
-        if: ${{ failure() }}
+        if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
         with:
           name: journal-compilation-exe
           path: compile-log.txt
