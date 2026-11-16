@@ -23,7 +23,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dezipper
         working-directory: .
-        run: unzip -oq Excellencia-V120*.zip -d build
+        run: |
+          Z="$(ls -1 *.[zZ][iI][pP] 2>/dev/null | head -n 1)"
+          mkdir -p build
+          if [ -n "$Z" ]; then
+            echo "Zip utilise : $Z"
+            unzip -oq "$Z" -d build
+          elif [ -d electron ] && [ -d site ]; then
+            echo "Pas de zip : le depot contient deja le logiciel"
+            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+          else
+            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+            exit 1
+          fi
       - name: Marque
         working-directory: .
         env:
@@ -63,7 +75,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dezipper
-        run: 7z x Excellencia-V120*.zip -obuild -y
+        run: |
+          Z="$(ls -1 *.[zZ][iI][pP] 2>/dev/null | head -n 1)"
+          mkdir -p build
+          if [ -n "$Z" ]; then
+            echo "Zip utilise : $Z"
+            7z x "$Z" -obuild -y
+          elif [ -d electron ] && [ -d site ]; then
+            echo "Pas de zip : le depot contient deja le logiciel"
+            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+          else
+            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+            exit 1
+          fi
       - name: Marque
         env:
           BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
