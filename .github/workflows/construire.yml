@@ -63,6 +63,9 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: npm install && npm install --no-save --no-audit sharp
       - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+      - run: npm run build:www
+        env:
+          EXB_OWNER: '1'
       - run: npm run android:add
       - run: npm run android:sync
         env:
