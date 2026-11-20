@@ -24,11 +24,15 @@ jobs:
       - name: Dezipper
         working-directory: .
         run: |
-          LIST="$(ls -1 logiciel-*.[zZ][iI][pP] 2>/dev/null || true)"
+          shopt -s nullglob nocaseglob
+          FILES=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          shopt -u nullglob nocaseglob
           mkdir -p build
-          if [ -n "$LIST" ]; then
+          if [ "${#FILES[@]}" -gt 0 ]; then
             echo "Archives du logiciel (fusionnees) :"
-            for Z in $LIST; do echo " - $Z"; unzip -oq "$Z" -d build; done
+            for Z in "${FILES[@]}"; do echo " - $Z"; unzip -oq "$Z" -d build; done
           elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
             Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
             echo "Zip utilise (le plus gros) : $Z"
@@ -98,11 +102,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dezipper
         run: |
-          LIST="$(ls -1 logiciel-*.[zZ][iI][pP] 2>/dev/null || true)"
+          shopt -s nullglob nocaseglob
+          FILES=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          shopt -u nullglob nocaseglob
           mkdir -p build
-          if [ -n "$LIST" ]; then
+          if [ "${#FILES[@]}" -gt 0 ]; then
             echo "Archives du logiciel (fusionnees) :"
-            for Z in $LIST; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
+            for Z in "${FILES[@]}"; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
           elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
             Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
             echo "Zip utilise (le plus gros) : $Z"
