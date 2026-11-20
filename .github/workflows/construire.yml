@@ -55,8 +55,11 @@ jobs:
       - name: Marque
         working-directory: .
         env:
-          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building","publicUrl":"https://excellenciabuilding1.netlify.app"}'
         run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
+      - name: Adresse
+        working-directory: .
+        run: grep -rlE "excellenciabuilding\.netlify\.app" build/site --include=*.js --include=*.html --include=*.json | xargs -r sed -i 's/excellenciabuilding\.netlify\.app/excellenciabuilding1.netlify.app/g' || true
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - uses: actions/setup-java@v4
@@ -125,8 +128,10 @@ jobs:
           fi
       - name: Marque
         env:
-          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building","publicUrl":"https://excellenciabuilding1.netlify.app"}'
         run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
+      - name: Adresse
+        run: grep -rlE "excellenciabuilding\.netlify\.app" build/site --include=*.js --include=*.html --include=*.json | xargs -r sed -i 's/excellenciabuilding\.netlify\.app/excellenciabuilding1.netlify.app/g' || true
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - run: npm install && npm install --no-save --no-audit sharp
