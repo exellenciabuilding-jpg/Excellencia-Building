@@ -24,9 +24,13 @@ jobs:
       - name: Dezipper
         working-directory: .
         run: |
-          Z="$(ls -1S *.[zZ][iI][pP] 2>/dev/null | head -n 1)"
+          LIST="$(ls -1 logiciel-*.[zZ][iI][pP] 2>/dev/null || true)"
           mkdir -p build
-          if [ -n "$Z" ]; then
+          if [ -n "$LIST" ]; then
+            echo "Archives du logiciel (fusionnees) :"
+            for Z in $LIST; do echo " - $Z"; unzip -oq "$Z" -d build; done
+          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
+            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
             echo "Zip utilise (le plus gros) : $Z"
             unzip -oq "$Z" -d build
           elif [ -d electron ] && [ -d site ]; then
@@ -43,7 +47,11 @@ jobs:
           fi
           echo "Contenu de build :"
           ls build
-          test -f build/package.json
+          if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
+            echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
+            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            exit 1
+          fi
       - name: Marque
         working-directory: .
         env:
@@ -84,11 +92,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Dezipper
         run: |
-          Z="$(ls -1S *.[zZ][iI][pP] 2>/dev/null | head -n 1)"
+          LIST="$(ls -1 logiciel-*.[zZ][iI][pP] 2>/dev/null || true)"
           mkdir -p build
-          if [ -n "$Z" ]; then
+          if [ -n "$LIST" ]; then
+            echo "Archives du logiciel (fusionnees) :"
+            for Z in $LIST; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
+          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
+            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
             echo "Zip utilise (le plus gros) : $Z"
-            7z x "$Z" -obuild -y
+            7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]
           elif [ -d electron ] && [ -d site ]; then
             echo "Pas de zip : le depot contient deja le logiciel"
             tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
@@ -103,7 +115,11 @@ jobs:
           fi
           echo "Contenu de build :"
           ls build
-          test -f build/package.json
+          if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
+            echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
+            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            exit 1
+          fi
       - name: Marque
         env:
           BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building"}'
@@ -134,15 +150,7 @@ jobs:
         env:
           EXB_OWNER: '1'
         run: node scripts/prepare.js
-      - name: Compiler l'EXE
-        working-directory: build/electron
-        env:
-          EXB_OWNER: '1'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -o pipefail
-          npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
-      - name: Resume de l'erreur (lisible sur telephone)
+      - name: Compiler l'EXE working-directory: build/electron env: EXB_OWNER: '1' GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} run: | set -o pipefail npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt - name: Resume de l'erreur (lisible sur telephone)
         if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
         run: |
           {
