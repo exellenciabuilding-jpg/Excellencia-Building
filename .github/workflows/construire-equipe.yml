@@ -1,0 +1,206 @@
+name: Construire APK et EXE equipe (comptable, ingenieur, architecte...)
+on:
+  workflow_dispatch:
+    inputs:
+      espace:
+        description: Pour quel espace ?
+        type: choice
+        default: comptable
+        options:
+          - comptable
+          - ingenieur
+          - architecte
+          - chantier
+          - direction
+          - magasin
+          - administration
+          - formation
+      cible:
+        description: Que construire ?
+        type: choice
+        default: APK
+        options:
+          - APK
+          - EXE-portable
+          - EXE-installateur
+jobs:
+  apk:
+    if: ${{ inputs.cible == 'APK' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dezipper
+        working-directory: .
+        run: |
+          shopt -s nullglob nocaseglob
+          FILES=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          shopt -u nullglob nocaseglob
+          mkdir -p build
+          if [ "${#FILES[@]}" -gt 0 ]; then
+            echo "Archives du logiciel (fusionnees) :"
+            for Z in "${FILES[@]}"; do echo " - $Z"; unzip -oq "$Z" -d build; done
+          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
+            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
+            echo "Zip utilise (le plus gros) : $Z"
+            unzip -oq "$Z" -d build
+          elif [ -d electron ] && [ -d site ]; then
+            echo "Pas de zip : le depot contient deja le logiciel"
+            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+          else
+            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+            exit 1
+          fi
+          if [ ! -f build/package.json ]; then
+            P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
+            echo "Dossier du logiciel trouve : $P"
+            if [ -n "$P" ]; then cp -a "$P"/. build/; fi
+          fi
+          echo "Contenu de build :"
+          ls build
+          if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
+            echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
+            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            exit 1
+          fi
+      - name: Marque
+        working-directory: .
+        env:
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building.equipe","publicUrl":"https://excellenciabuilding1.netlify.app"}'
+        run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
+      - name: Adresse
+        working-directory: .
+        run: grep -rlE "excellenciabuilding\.netlify\.app" build/site --include=*.js --include=*.html --include=*.json | xargs -r sed -i 's/excellenciabuilding\.netlify\.app/excellenciabuilding1.netlify.app/g' || true
+      - name: Espace
+        working-directory: .
+        env:
+          ESPACE: ${{ inputs.espace }}
+        run: node -e "const fs=require('fs');const f='build/site/index.html';let h=fs.readFileSync(f,'utf8');const m=/<head[^>]*>/i.exec(h);if(!m)throw new Error('head introuvable');const t='<script>try{localStorage.setItem(\'exb_espace\',\''+process.env.ESPACE+'\')}catch(e){}</script>';h=h.slice(0,m.index+m[0].length)+t+h.slice(m.index+m[0].length);fs.writeFileSync(f,h)"
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm install && npm install --no-save --no-audit sharp
+      - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+      - run: npm run build:www
+      - run: npm run android:add
+      - run: npm run android:sync
+      - run: ./gradlew assembleDebug --no-daemon
+        working-directory: build/android
+      - run: cp build/android/app/build/outputs/apk/debug/app-debug.apk Excellencia-Equipe-${{ inputs.espace }}.apk
+        working-directory: .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: APK-equipe-${{ inputs.espace }}
+          path: Excellencia-Equipe-${{ inputs.espace }}.apk
+          retention-days: 30
+  exe:
+    if: ${{ startsWith(inputs.cible, 'EXE') }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      CIBLE_EXE: ${{ inputs.cible == 'EXE-portable' && 'portable' || 'nsis' }}
+      PUBLIER: never
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dezipper
+        run: |
+          shopt -s nullglob nocaseglob
+          FILES=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          shopt -u nullglob nocaseglob
+          mkdir -p build
+          if [ "${#FILES[@]}" -gt 0 ]; then
+            echo "Archives du logiciel (fusionnees) :"
+            for Z in "${FILES[@]}"; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
+          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
+            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
+            echo "Zip utilise (le plus gros) : $Z"
+            7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]
+          elif [ -d electron ] && [ -d site ]; then
+            echo "Pas de zip : le depot contient deja le logiciel"
+            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+          else
+            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+            exit 1
+          fi
+          if [ ! -f build/package.json ]; then
+            P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
+            echo "Dossier du logiciel trouve : $P"
+            if [ -n "$P" ]; then cp -a "$P"/. build/; fi
+          fi
+          echo "Contenu de build :"
+          ls build
+          if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
+            echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
+            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            exit 1
+          fi
+      - name: Marque
+        env:
+          BRAND: '{"version":1,"name":"Excellencia Building","short":"Excellencia","appId":"com.excellencia.building.equipe","publicUrl":"https://excellenciabuilding1.netlify.app"}'
+        run: mkdir -p build/clients/proprio && node -e "require('fs').writeFileSync('build/clients/proprio/entreprise.json',process.env.BRAND)"
+      - name: Adresse
+        run: grep -rlE "excellenciabuilding\.netlify\.app" build/site --include=*.js --include=*.html --include=*.json | xargs -r sed -i 's/excellenciabuilding\.netlify\.app/excellenciabuilding1.netlify.app/g' || true
+      - name: Espace
+        env:
+          ESPACE: ${{ inputs.espace }}
+        run: node -e "const fs=require('fs');const f='build/site/index.html';let h=fs.readFileSync(f,'utf8');const m=/<head[^>]*>/i.exec(h);if(!m)throw new Error('head introuvable');const t='<script>try{localStorage.setItem(\'exb_espace\',\''+process.env.ESPACE+'\')}catch(e){}</script>';h=h.slice(0,m.index+m[0].length)+t+h.slice(m.index+m[0].length);fs.writeFileSync(f,h)"
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install && npm install --no-save --no-audit sharp
+        working-directory: build
+      - run: node scripts/apply-brand.js clients/proprio/entreprise.json
+        working-directory: build
+      - name: Corriger les noms de fichiers
+        working-directory: build/electron
+        run: node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.build.artifactName;p.build.nsis.artifactName='Excellencia-Equipe-Installateur-\${version}.\${ext}';p.build.portable={artifactName:'Excellencia-Equipe-Portable-\${version}.\${ext}'};fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+      - name: Installer
+        working-directory: build/electron
+        run: npm install
+      - name: Preparer
+        working-directory: build/electron
+        run: node scripts/prepare.js
+      - name: Compiler l'EXE
+        working-directory: build/electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
+      - name: Resume de l'erreur (lisible sur telephone)
+        if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
+        run: |
+          {
+            echo "## Erreur de compilation de l'EXE"
+            echo "### Lignes qui parlent d'erreur"
+            echo '```'
+            grep -n -i -E "error|failed|cannot|invalid|unknown|not found|warning:" compile-log.txt | head -40 || true
+            echo '```'
+            echo "### 40 dernieres lignes avant la fin"
+            echo '```'
+            tail -n 40 compile-log.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
+        with:
+          name: journal-compilation-exe
+          path: compile-log.txt
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EXE-equipe-${{ inputs.espace }}
+          path: build/electron/dist/*.exe
+          retention-days: 30
