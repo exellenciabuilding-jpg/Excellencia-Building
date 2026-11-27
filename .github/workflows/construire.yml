@@ -25,24 +25,28 @@ jobs:
         working-directory: .
         run: |
           shopt -s nullglob nocaseglob
-          FILES=()
-          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
-          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          BASE=(); OVER=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) BASE+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) BASE+=("$Z");; esac; done
+          for Z in *.zip; do case "${Z,,}" in logiciel-*) ;; *) OVER+=("$Z");; esac; done
           shopt -u nullglob nocaseglob
           mkdir -p build
-          if [ "${#FILES[@]}" -gt 0 ]; then
-            echo "Archives du logiciel (fusionnees) :"
-            for Z in "${FILES[@]}"; do echo " - $Z"; unzip -oq "$Z" -d build; done
-          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
-            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
-            echo "Zip utilise (le plus gros) : $Z"
-            unzip -oq "$Z" -d build
-          elif [ -d electron ] && [ -d site ]; then
-            echo "Pas de zip : le depot contient deja le logiciel"
-            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
-          else
-            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
-            exit 1
+          if [ "${#BASE[@]}" -gt 0 ]; then
+            echo "Archives du logiciel (base, fusionnees) :"
+            for Z in "${BASE[@]}"; do echo " - $Z"; unzip -oq "$Z" -d build; done
+          fi
+          if [ "${#OVER[@]}" -gt 0 ]; then
+            echo "Autres zips (appliques par-dessus la base) :"
+            for Z in "${OVER[@]}"; do echo " - $Z"; unzip -oq "$Z" -d build; done
+          fi
+          if [ "${#BASE[@]}" -eq 0 ] && [ "${#OVER[@]}" -eq 0 ]; then
+            if [ -d electron ] && [ -d site ]; then
+              echo "Pas de zip : le depot contient deja le logiciel"
+              tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+            else
+              echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+              exit 1
+            fi
           fi
           if [ ! -f build/package.json ]; then
             P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
@@ -53,7 +57,8 @@ jobs:
           ls build
           if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
             echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
-            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            echo "Le zip Excellencia-...-COMPLET ne contient que le site/ (pas electron/ ni package.json)."
+            echo "Il faut AUSSI, a la racine du depot, les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou un zip complet du depot avec electron/ + site/ + package.json)."
             exit 1
           fi
       - name: Marque
@@ -103,24 +108,28 @@ jobs:
       - name: Dezipper
         run: |
           shopt -s nullglob nocaseglob
-          FILES=()
-          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) FILES+=("$Z");; esac; done
-          for Z in logiciel-*.zip; do case "$Z" in *" ("*) FILES+=("$Z");; esac; done
+          BASE=(); OVER=()
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) ;; *) BASE+=("$Z");; esac; done
+          for Z in logiciel-*.zip; do case "$Z" in *" ("*) BASE+=("$Z");; esac; done
+          for Z in *.zip; do case "${Z,,}" in logiciel-*) ;; *) OVER+=("$Z");; esac; done
           shopt -u nullglob nocaseglob
           mkdir -p build
-          if [ "${#FILES[@]}" -gt 0 ]; then
-            echo "Archives du logiciel (fusionnees) :"
-            for Z in "${FILES[@]}"; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
-          elif ls *.[zZ][iI][pP] >/dev/null 2>&1; then
-            Z="$(ls -1S *.[zZ][iI][pP] | head -n 1)"
-            echo "Zip utilise (le plus gros) : $Z"
-            7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]
-          elif [ -d electron ] && [ -d site ]; then
-            echo "Pas de zip : le depot contient deja le logiciel"
-            tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
-          else
-            echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
-            exit 1
+          if [ "${#BASE[@]}" -gt 0 ]; then
+            echo "Archives du logiciel (base, fusionnees) :"
+            for Z in "${BASE[@]}"; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
+          fi
+          if [ "${#OVER[@]}" -gt 0 ]; then
+            echo "Autres zips (appliques par-dessus la base) :"
+            for Z in "${OVER[@]}"; do echo " - $Z"; 7z x "$Z" -obuild -y > /dev/null || [ $? -eq 1 ]; done
+          fi
+          if [ "${#BASE[@]}" -eq 0 ] && [ "${#OVER[@]}" -eq 0 ]; then
+            if [ -d electron ] && [ -d site ]; then
+              echo "Pas de zip : le depot contient deja le logiciel"
+              tar --exclude=./build --exclude=./.git -cf - . | tar -xf - -C build
+            else
+              echo "ERREUR : aucun zip et pas de dossier electron/ + site/ a la racine"
+              exit 1
+            fi
           fi
           if [ ! -f build/package.json ]; then
             P="$(find build -maxdepth 3 -name package.json -not -path '*/node_modules/*' | while read -r f; do d="$(dirname "$f")"; if [ -d "$d/electron" ] && [ -d "$d/site" ]; then echo "$d"; break; fi; done)"
@@ -131,7 +140,8 @@ jobs:
           ls build
           if [ ! -f build/package.json ] || [ ! -d build/electron ] || [ ! -d build/site ]; then
             echo "ERREUR : il manque package.json, electron/ ou site/ dans build."
-            echo "Le depot doit contenir les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou le zip complet du depot)."
+            echo "Le zip Excellencia-...-COMPLET ne contient que le site/ (pas electron/ ni package.json)."
+            echo "Il faut AUSSI, a la racine du depot, les archives logiciel-...-partie-1-sur-2.zip ET logiciel-...-partie-2-sur-2.zip (ou un zip complet du depot avec electron/ + site/ + package.json)."
             exit 1
           fi
       - name: Marque
