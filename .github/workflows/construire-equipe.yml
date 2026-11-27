@@ -185,7 +185,14 @@ jobs:
       - name: Preparer
         working-directory: build/electron
         run: node scripts/prepare.js
-      - name: Compiler l'EXE working-directory: build/electron env: GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} run: | set -o pipefail npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt - name: Resume de l'erreur (lisible sur telephone)
+      - name: Compiler l'EXE
+        working-directory: build/electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          npx electron-builder --win $CIBLE_EXE --x64 --publish $PUBLIER 2>&1 | tee ../../compile-log.txt
+      - name: Resume de l'erreur (lisible sur telephone)
         if: ${{ failure() && hashFiles('compile-log.txt') != '' }}
         run: |
           {
